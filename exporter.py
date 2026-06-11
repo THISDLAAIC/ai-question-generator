@@ -170,7 +170,7 @@ def _export_pdf_weasyprint(md_path: str, output_dir: str, prefix: str) -> str:
 {html_content}
 </body>
 </html>"""
-    pdf_path = os.path.join(output_dir, f"{prefix}_{ts}.pdf")
+    pdf_path = os.path.join(output_dir, f"{prefix}.pdf")
     try:
         from weasyprint import HTML
         HTML(string=full_html).write_pdf(pdf_path)

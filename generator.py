@@ -1,9 +1,63 @@
 import json
+import re
 from pathlib import Path
 
 import requests
 
 from config import AppConfig
+
+# \n 后接这些单词时是 LaTeX 命令（\nu、\neq、\nabla...），而不是换行转义
+_N_LATEX_CMD = re.compile(
+    r"n(?:abla|ewline|onumber|exists|parallel|approx|leq|geq|less|gtr"
+    r"|mid|eq|eg|ot|sim|u|e|i)(?![a-zA-Z])"
+)
+
+
+def _sanitize_latex_backslashes(raw: str) -> str:
+    r"""修复 LLM 在 JSON 字符串中漏转义的 LaTeX 反斜杠。
+
+    LLM 常把 \\text 写成 \text，其中 \t 会被 JSON 解析成 tab，
+    而 \p（\pi）等非法转义会直接导致解析失败。这里把所有
+    "不像 JSON 转义、更像 LaTeX 命令" 的单反斜杠补成双反斜杠。
+    """
+    out = []
+    i, n = 0, len(raw)
+    while i < n:
+        ch = raw[i]
+        if ch != "\\":
+            out.append(ch)
+            i += 1
+            continue
+        nxt = raw[i + 1] if i + 1 < n else ""
+        if nxt == "\\":
+            # 已正确转义，原样保留（连同后面的内容由下一轮处理）
+            out.append("\\\\")
+            i += 2
+            continue
+        if nxt in '"/':
+            out.append("\\" + nxt)
+            i += 2
+            continue
+        if nxt == "u":
+            if re.fullmatch(r"[0-9a-fA-F]{4}", raw[i + 2 : i + 6]):
+                out.append(raw[i : i + 6])  # 合法的 \uXXXX
+                i += 6
+            else:
+                out.append("\\\\")  # \underline、\uparrow 等
+                i += 1
+            continue
+        if nxt == "n" and not _N_LATEX_CMD.match(raw, i + 1):
+            out.append("\\n")  # 真正的换行
+            i += 2
+            continue
+        if nxt in "bfrt" and not ("a" <= raw[i + 2 : i + 3] <= "z" if i + 2 < n else False):
+            out.append("\\" + nxt)  # 真正的 \t \b \f \r
+            i += 2
+            continue
+        # 其余一律视为 LaTeX 命令或孤立反斜杠：\pi \frac \times \text \, ...
+        out.append("\\\\")
+        i += 1
+    return "".join(out)
 
 
 def _load_prompt(filename: str) -> str:
@@ -128,6 +182,8 @@ class QuestionGenerator:
                 lines = lines[:-1]
             raw = "\n".join(lines)
 
+        raw = _sanitize_latex_backslashes(raw)
+
         for attempt, text in enumerate([raw] + self._try_repair(raw)):
             try:
                 return json.loads(text)
@@ -151,7 +207,6 @@ class QuestionGenerator:
         end = raw.rfind("]")
         if start != -1 and end != -1 and end > start:
             results.append(raw[start : end + 1])
-        import re
         m = re.search(r'\[.*\]', raw, re.DOTALL)
         if m:
             results.append(m.group())

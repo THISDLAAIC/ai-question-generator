@@ -58,7 +58,7 @@ def load_config(path: str = "config.yaml") -> AppConfig:
         base_url=_resolve_env(llm_raw["base_url"]),
         api_key=_resolve_env(llm_raw["api_key"]),
         model=llm_raw["model"],
-        temperature=float(llm_raw.get("temperature", 0.9)),
+        temperature=float(llm_raw.get("temperature", 0.3)),
         max_tokens=int(llm_raw.get("max_tokens", 4096)),
     )
 
